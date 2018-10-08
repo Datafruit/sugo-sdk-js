@@ -1,0 +1,23 @@
+/node_modules/
+/build/
+/libs/
+/lib/
+!/lib/.gitkeep
+/temp/
+/private/
+# Logs
+*.log
+.DS_Store
+*.rdb
+
+# config etc
+.idea/
+config.js
+.vscode/
+!src/config.js
+
+
+npm-debug.log*
+/package-lock.json
+/yarn-error.log
+/yarn.lock

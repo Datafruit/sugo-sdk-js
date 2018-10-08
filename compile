@@ -1,0 +1,23 @@
+#!/bin/bash -eu
+echo 'rm build/*'
+rm -rf ./build/
+mkdir -p ./build
+
+if [ $@ = 'build' ]; then
+  echo 'rm libs/*'
+  rm -rf ./libs/
+  mkdir -p ./libs
+fi
+
+# sugoio-core
+echo $@ 'Bundling globals and editor files'
+npm run $@
+
+if [ $? -ne 0 ]; then
+    echo "Bundling was get error and exit"
+    exit 1
+fi
+
+echo "Copy to libs"
+cp ./build/sugo-sdk.js ./libs/sugoio-latest.min.buf.js
+cp ./build/sugo-sdk.js ./libs/sugoio-latest.min.js

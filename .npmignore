@@ -1,0 +1,25 @@
+/tests/
+/src/
+/vender/
+/vendor/
+/build/
+/temp/
+/bin/
+/private/
+/.*
+/*.sh
+
+# === vscode ====
+/.vscode/
+
+/.babelrc
+
+# === WebStorm ===
+/.idea/
+/testServer.js
+/webpack.config.js
+/yarn-error.log
+/yarn.lock
+/config.js
+/sugoio-jslib-snippet.js
+compile
