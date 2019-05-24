@@ -9,12 +9,13 @@ var Sugoio = require('./Sugoio')
 var Global = require('../global')
 var onDOMContentLoaded = require('./on-dom-content-loaded')
 var Logger = require('../logger').get('Sugoio')
+var utils = require('../utils')
 
 
 /** @typedef {object<string, Sugoio>} */
 var instances = {}
 
-function override_mp_init_func () {
+function override_sugo_init_func () {
   /**
    * @param {string} [token]
    * @param {object} [config]
@@ -41,10 +42,21 @@ function override_mp_init_func () {
         instance = Sugoio.create_sugoio(token, config, CONSTANTS.PRIMARY_INSTANCE_NAME)
         instances[CONSTANTS.PRIMARY_INSTANCE_NAME] = instance
       }
-
+      if (!instance) {
+        return
+      }
       instance._ = _
       Global.set(instance)
-      Logger.info('%s initialized', instance.name)
+      Logger.info('%s initialized', instance.name, window.location.href)
+      const heatmap = instance.get_config('heatmap')
+      if (heatmap) { // 切换页面时，通知父窗口改变路径
+        utils.sendMessage2Parent({
+          type: 'changeWindowLocation',
+          payload: {
+            location: window.location.href
+          }
+        })
+      }
       return instance
     }
   }
@@ -81,7 +93,7 @@ function init_from_snippet () {
     }
   })
 
-  override_mp_init_func()
+  override_sugo_init_func()
   master.init()
 
   // Fire loaded events after updating the window's sugoio object
@@ -100,5 +112,5 @@ function init_from_snippet () {
 }
 
 module.exports = {
-  init_from_snippet: init_from_snippet
+  init_from_snippet
 }

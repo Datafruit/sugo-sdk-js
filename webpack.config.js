@@ -6,10 +6,29 @@ const path = require('path')
 const webpack = require('webpack')
 const pkg = require('./package.json')
 const UglifyJSPlugin = require('uglifyjs-webpack-plugin')
+const ExtractTextPlugin = require('extract-text-webpack-plugin')
 const _ = require('lodash')
 
 console.log('============building version', pkg.version, '============')
 const isProduction = process.env.NODE_ENV === 'production'
+
+const definePlugin = new webpack.DefinePlugin({
+  'process.env': {
+    'NODE_ENV': JSON.stringify(process.env.NODE_ENV),
+    'SDK_VERSION': JSON.stringify(pkg.version)
+  }
+})
+
+const uglifyJSPlugin = new UglifyJSPlugin({
+  uglifyOptions: {
+    compress: {
+      warnings: false
+    },
+    output: {
+      comments: false
+    }
+  }
+})
 
 const output = {
   path: path.resolve(__dirname, './build'),
@@ -19,15 +38,52 @@ const output = {
 // web-sdk编译
 let webSDKCompile = {
   entry: {
-    'sugo-sdk': './src/loader-globals.js'
+    'sugo-sdk': './src/web-sdk-entry.js'
+  },
+  output,
+  module: {
+    loaders: [
+      {
+        test: /\.js$/,
+        loader: 'babel-loader',
+        exclude: /node_modules/
+      },
+      {
+        test: /\.js?$/,
+        loader: 'es3ify-loader',
+        enforce: 'post'
+      }
+    ]
+  },
+  devtool: isProduction ? '' : 'source-map',
+  plugins: [
+    definePlugin
+  ]
+}
+
+let sdkEditorCompile = {
+  entry: {
+    editor: './src/editor/global.js'
   },
   output,
   module: {
     loaders: [
       {
         test: /\.vue$/,
-        loader: 'vue-loader',
-        exclude: /node_modules/
+        use: [
+          {
+            loader: 'vue-loader',
+            options: {
+              extractCSS: true
+            }
+          },
+          {
+            loader: 'iview-loader',
+            options: {
+              prefix: true
+            }
+          }
+        ]
       },
       {
         test: /\.js$/,
@@ -35,8 +91,27 @@ let webSDKCompile = {
         exclude: /node_modules/
       },
       {
+        test: /\.less$/,
+        loader: ExtractTextPlugin.extract({
+          fallback: 'style-loader',
+          use: [
+            'css-loader',
+            {
+              loader: 'less-loader',
+              options: {
+                javascriptEnabled: true
+              }
+            }
+          ]
+        })
+      },
+      {
         test: /\.css$/,
-        loader: 'style-loader!css-loader'
+        loader:  ExtractTextPlugin.extract({
+          fallback: 'style-loader',
+          // publicPath: '../',
+          use: ['css-loader']
+        })
       },
       {
         test: /\.(eot|svg|ttf|woff|woff2)(\?\S*)?$/,
@@ -45,7 +120,7 @@ let webSDKCompile = {
             loader: 'url-loader',
             options: {
               limit: 1024 * 20,
-              name: '[name].[ext]?[hash]'
+              name: 'assets/[name].[ext]?[hash]'
             }
           }
         ]
@@ -55,7 +130,7 @@ let webSDKCompile = {
         loader: 'file-loader',
         options: {
           limit: 1024 * 20,
-          name: '[name].[ext]?[hash]'
+          name: 'assets/[name].[ext]?[hash]'
         }
       }
     ]
@@ -67,12 +142,8 @@ let webSDKCompile = {
   },
   devtool: isProduction ? '' : 'source-map',
   plugins: [
-    new webpack.DefinePlugin({
-      'process.env': {
-        'NODE_ENV': JSON.stringify(process.env.NODE_ENV),
-        'SDK_VERSION': JSON.stringify(pkg.version)
-      }
-    })
+    definePlugin,
+    new ExtractTextPlugin('editor.css')
   ]
 }
 
@@ -86,7 +157,7 @@ let wxMiniSDKCompile = {
     libraryTarget: 'commonjs2'
   },
   module: {
-    loaders: [      
+    loaders: [
       {
         test: /\.js$/,
         loader: 'babel-loader',
@@ -114,22 +185,26 @@ if (isProduction) {
     })
   )
 
+  sdkEditorCompile.plugins = (sdkEditorCompile.plugins || []).concat(uglifyJSPlugin)
+
   // wxMiniSDKCompile.devtool = void 0
-  wxMiniSDKCompile.plugins = (wxMiniSDKCompile.plugins || []).concat(
-    new UglifyJSPlugin({
-      uglifyOptions: {
-        compress: {
-          warnings: false
-        },
-        output: {
-          comments: false
-        }
-      }
-    })
-  )
+  wxMiniSDKCompile.plugins = (wxMiniSDKCompile.plugins || []).concat(uglifyJSPlugin)
+}
+
+// web sdk打包分离vuejs（使用时需单独引入vuejs）
+const sdkEditorLiteCompile = _.clone(sdkEditorCompile)
+sdkEditorLiteCompile.entry = {
+  'editor-lite': './src/editor/global.js'
+}
+sdkEditorLiteCompile.externals = {
+  vue: 'Vue' 
+  // iview: 'iview'
+  // 'element-ui': 'ELEMENT'
 }
 
 module.exports = [
   webSDKCompile,
+  sdkEditorCompile,
+  sdkEditorLiteCompile,
   wxMiniSDKCompile
 ]

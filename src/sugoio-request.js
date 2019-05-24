@@ -9,7 +9,7 @@ var config = {
 var parse = function (req) {
   var result
   try {
-    result = JSON.parse(req.responseText)
+    result = _.JSONDecode(req.responseText)
   } catch (e) {
     result = req.responseText
   }

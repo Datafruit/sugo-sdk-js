@@ -47,7 +47,7 @@ function install(app, router, database, config, dependencies) {
     }
 
     // 提取sugoio配置,写入到本地config中
-    const hostsKeys = ['api_host', 'app_host', 'decide_host']
+    const hostsKeys = ['api_host', 'app_host', 'decide_host', 'enable_geo_track', 'duration_track', 'enable_hash', 'js_cdn', 'heatmap', 'heatmap_grid_track']
 
     hostsKeys.forEach((key) => {
       const ck = 'websdk_' + key

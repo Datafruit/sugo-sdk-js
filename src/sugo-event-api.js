@@ -28,7 +28,7 @@ module.exports = {
 
   serialize: function (params) {
     Logger.debug('Before serialize params: %o', params)
-    return JSON.stringify({ q: _.compressUrlQuery(params) })
+    return _.JSONEncode({ q: _.compressUrlQuery(params) })
   },
 
   queryString: function (params) {
@@ -63,7 +63,7 @@ module.exports = {
    * @return {Object}
    */
   dimensions: function (token) {
-    return Request.post(concat(this.host, '/api/sdk/desktop/dimensions'), JSON.stringify({ token: token }))
+    return Request.post(concat(this.host, '/api/sdk/desktop/dimensions'), _.JSONEncode({ token: token }))
   },
 
   /**
@@ -73,7 +73,7 @@ module.exports = {
    * @param {String} app_version
    */
   savePageCategories: function (models, token, app_version) {
-    return Request.post(concat(this.host, '/api/sdk/desktop/page-categories/save'), JSON.stringify({
+    return Request.post(concat(this.host, '/api/sdk/desktop/page-categories/save'), _.JSONEncode({
       models: models,
       token: token,
       app_version: app_version

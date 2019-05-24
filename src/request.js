@@ -52,9 +52,12 @@ function createXMLHttpRequestCORS () {
     error: null
   }
   var hooks = {
-    send: function (method, url, data) {
-      xhr.open(method, url)
+    send: function (method, url, data, async = true) {
+      xhr.open(method, url, async)
       xhr.withCredentials = false
+      // xhr.ontimeout = function (e) {
+      //   console.log(url, 'timeout', e)
+      // }
       xhr.onreadystatechange = function () {
         var res
         if (xhr.readyState === 4) {
@@ -95,7 +98,7 @@ function createXDomainRequestCORS () {
     error: null
   }
   var hooks = {
-    send: function (method, url, data) {
+    send: function (method, url, data, async = true) {
       xdr.open(method, url)
       xdr.onload = function () {
         if (callbacks.success) {
@@ -109,9 +112,13 @@ function createXDomainRequestCORS () {
       }
       xdr.ontimeout = function () {}
       xdr.onprogress = function () {}
-      setTimeout(function () {
+      if (async) {
+        setTimeout(function () {
+          xdr.send(data || null)
+        }, 0)
+      } else { // 解决IE下beforeunload发送停留事件不生效问题
         xdr.send(data || null)
-      }, 0)
+      }
       return hooks
     },
     success: function (callback) {

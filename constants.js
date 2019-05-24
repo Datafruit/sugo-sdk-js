@@ -5,11 +5,12 @@
  */
 
 module.exports = {
-  // sugoio 实例挂载到window对象上的属性
+  /** sugoio 实例挂载到window对象上的属性 */
   PRIMARY_INSTANCE_NAME: 'sugoio',
-  // 全局匹配挂荎sugoio的属性
+  /** 全局匹配挂荎sugoio的属性 */
   INJECT_CONFIG_PROP_KEY: '__SUGO__INJECT__CONFIG__',
-
+  /** 识别不同页面的全局code变量（宇信客户专用）*/
+  SINGLE_PAGE_CODE: '__SUGO_SINGLE_PAGE_CODE__',
   /*  sugoio-core  */
   INIT_MODULE: 0,
   INIT_SNIPPET: 1,
@@ -38,5 +39,6 @@ module.exports = {
 
   /* standard event name */
   FIRST_VISIT_EVENT_NAME: '首次访问',
-  FIRST_LOGIN_EVENT_NAME: '首次登录'
+  FIRST_LOGIN_EVENT_NAME: '首次登录',
+  RESOLUTION_MODE: '__SUGO_RESOLUTION_SETTING__'
 }

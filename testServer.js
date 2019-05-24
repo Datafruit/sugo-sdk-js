@@ -22,6 +22,8 @@ app.use(logger('dev'))
 
 app.use('/tests', express.static(__dirname + '/tests'))
 app.use('/private', express.static(__dirname + '/private'))
+app.use('/vue-admin', express.static(__dirname + '/private/vue-admin'))
+app.use('/assets', express.static(__dirname + '/private/vue-admin/assets/'))
 app.use('/yufp-web', express.static(__dirname + '/private/yufp-web'))
 app.get('/tests/cookie_included/:cookieName', function(req, res) {
   if (req.cookies && req.cookies[req.params.cookieName]) {

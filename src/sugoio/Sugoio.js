@@ -29,7 +29,8 @@ var USE_XHR = (window.XMLHttpRequest && 'withCredentials' in new XMLHttpRequest(
 // IE<10 does not support cross-origin XHR's but script tags
 // with defer won't block window.onload; ENQUEUE_REQUESTS
 // should only be true for Opera<12
-var ENQUEUE_REQUESTS = !USE_XHR && (userAgent.indexOf('MSIE') === -1) && (userAgent.indexOf('Mozilla') === -1)
+var isNotIE = userAgent.indexOf('MSIE') === -1
+var ENQUEUE_REQUESTS = !USE_XHR && isNotIE && (userAgent.indexOf('Mozilla') === -1)
 
 var DOM_LOADED = false
 onDOMContentLoaded(function () {
@@ -175,16 +176,24 @@ Sugoio.prototype.init = function (token, config, name) {
 // init(...) method sets up a new library and calls _init on it.
 //
 Sugoio.prototype._init = function (token, config, name) {
+  const instance = Global.get()
   this.__loaded = true
   this.name = name
   this.config = {}
-  this.set_config(_.extend({}, DEFAULT_CONFIG, config, {
-    name: name,
-    token: token,
-    projectId: config.project_id,
-    cdn: config.app_host,
-    'callback_fn': ((name === CONSTANTS.PRIMARY_INSTANCE_NAME) ? name : CONSTANTS.PRIMARY_INSTANCE_NAME + '.' + name) + '._jsc'
-  }))
+  this.set_config(_.extend(
+    {},
+    DEFAULT_CONFIG,
+    // 前端的注入全局配置: websdk_['api_host', 'app_host', 'decide_host', 'enable_geo_track', 'enable_hash', 'js_cdn']
+    (instance[CONSTANTS.INJECT_CONFIG_PROP_KEY] || {}),
+    // 放在注入配置(INJECT_CONFIG_PROP_KEY)之后，因为处理过app_host等http协议
+    _.pick(DEFAULT_CONFIG, ['api_host', 'app_host', 'decide_host', 'cdn']),
+    config,
+    {
+      name,
+      token,
+      projectId: config.project_id,
+      'callback_fn': ((name === CONSTANTS.PRIMARY_INSTANCE_NAME) ? name : CONSTANTS.PRIMARY_INSTANCE_NAME + '.' + name) + '._jsc'
+    }))
 
   this._jsc = function () {}
 
@@ -200,10 +209,81 @@ Sugoio.prototype._init = function (token, config, name) {
   this.register_once({ distinct_id: _.UUID() }, '')
 }
 
+/** start ## just for yuxin sdk */
+Sugoio.prototype.load = function(code, options) {
+  // if (!code || !options.title) {
+  //   return
+  // }
+  Logger.debug('load singlePage => ', code, options)
+  // 设置全局页面code变量
+  window[CONSTANTS.SINGLE_PAGE_CODE] = {
+    code: code || '',
+    title: options.title || document.title
+  }
+  // 埋点模式
+  if (Global.Global.Editor) {
+    setTimeout(() => {
+      // 触发editor的'store_single_page_code' watcher 重新加载页面配置
+      Global.Global.Editor.run.vm.vm.store_single_page_code = code
+    }, 500)
+    return
+  }
+  //***************以下为正常访问页面模式 ******************/
+  // 加载页面配置绑定事件
+  const instance = Global.get()
+  Track.track.loadSdkDecide(instance)
+  // 计时停留事件
+  instance.time_event('停留')
+}
+
+Sugoio.prototype.unload = function(code, options) {
+  // if (!code || !options.title) {
+  //   return
+  // }
+  Logger.debug('unload singlePage => ', code, options)
+  // 埋点模式
+  if (Global.Global.Editor) {
+    return
+  }
+  // 上报停留事件
+  const instance = Global.get()
+  const enable_hash = instance.get_config('enable_hash') || false
+  const path_name = Track.track._getPathname(enable_hash)
+  instance.track('停留', {
+    event_type: 'duration',
+    path_name: path_name,
+    page_name: options.title || document.title,
+    current_url: (location.origin || (location.protocol + '//' + location.host)) + path_name
+  })
+}
+
+/* end ## just for yuxin sdk */
+
+
 /* ## Private methods */
 
 Sugoio.prototype._loaded = function () {
-  this.get_config('loaded')(this)
+  const instance = this
+  // sdk 加载完成，init配置loaded回调
+  this.get_config('loaded')(instance)
+
+  // 如果配置自动上报停留事件
+  const duration_track = this.get_config('duration_track')
+  if (duration_track === true) {
+    this.time_event('停留')
+    _.register_event(window, 'beforeunload', function() {
+      // 上传页面点击事件
+      if (0 < Track.track._cachedGridClickEvents.length) {
+        instance.batch_track('屏幕点击', Track.track._cachedGridClickEvents)
+      }
+      instance.track('停留')
+      // for ie 会弹出是否离开的框
+      // 判断是否 IE，是才抛异常
+      if (!isNotIE) {
+        throw new Error('beforeunload')
+      }
+    }, false, true)
+  }
 
   // this happens after so a user can call identify/name_tag in
   // the loaded callback
@@ -471,36 +551,8 @@ Sugoio.prototype.disable = function (events) {
   }
 }
 
-/**
- * Track an event. This is the most important and
- * frequently used Sugoio function.
- *
- * ### Usage:
- *
- *     // track an event named 'Registered'
- *     sugoio.track('Registered', {'Gender': 'Male', 'Age': 21});
- *
- * To track link clicks or form submissions, see track_links() or track_forms().
- *
- * @param {String} event_name The name of the event. This can be anything the user does - 'Button Click', 'Sign Up', 'Item Purchased', etc.
- * @param {Object} [properties] A set of properties to include with the event you're sending. These describe the user who did the event or details about the event itself.
- * @param {Function} [callback] If provided, the callback function will be called after tracking the event.
- */
-Sugoio.prototype.track = function (event_name, properties, callback) {
+Sugoio.prototype._encode = function (event_name, properties) {
   var master = Global.get()
-  if (!_.isFunction(callback)) {
-    callback = _.noop
-  }
-
-  if (_.isUndefined(event_name)) {
-    Logger.error('No event name provided to sugoio.track')
-    return
-  }
-
-  if (this._event_is_disabled(event_name)) {
-    callback(0)
-    return
-  }
 
   // set defaults
   properties = properties || {}
@@ -531,12 +583,10 @@ Sugoio.prototype.track = function (event_name, properties, callback) {
   // properties object by passing in a new object
   // update properties with pageview info and super-properties
   const enable_hash = this.get_config('enable_hash') || false
-  const hash = enable_hash ? location.hash : ''
   properties = _.extend(
     {
-      event_type: 'click', // default event_type 
-      path_name: location.pathname + hash,
-      page_category: master.page_category
+      event_type: 'click', // default event_type
+      path_name: Track.track._getPathname(enable_hash)
     },
     _.info.properties(),
     // referrer may be in cookie
@@ -544,6 +594,11 @@ Sugoio.prototype.track = function (event_name, properties, callback) {
     { sdk_version: this.version || Global.Global.version },
     properties
   )
+
+  // 上报页面分类
+  if (master.page_category) {
+    properties.page_category = master.page_category
+  }
 
   var realPeople = this._getRealPeopleJson()
   properties = _.extend({}, properties, realPeople)
@@ -567,7 +622,7 @@ Sugoio.prototype.track = function (event_name, properties, callback) {
   if (properties.event_id) {
     defaultProps.event_id = properties.event_id
   }
-
+  var singlePage = window[CONSTANTS.SINGLE_PAGE_CODE]
   // 如果代码埋点设置了page_name则不覆盖，以代码埋点优先
   if (!properties.page_name) {
     // 设置自定义页面名称
@@ -576,8 +631,13 @@ Sugoio.prototype.track = function (event_name, properties, callback) {
     if (pageInfo && pageInfo.page_name) {
       properties.page_name = pageInfo.page_name
     } else {
-      properties.page_name = document.title
+      properties.page_name = singlePage && singlePage.title ? singlePage.title : document.title
     }
+  }
+
+  // 重新赋值current_url
+  if (singlePage && singlePage.code) {
+    properties.current_url = Track.track._getCurrentUrl()
   }
 
   var session_id = this.get_property('session_id')
@@ -603,6 +663,46 @@ Sugoio.prototype.track = function (event_name, properties, callback) {
     Logger.log('Please check the length of dimensions that from server.')
   }
 
+  return {
+    truncated_data: truncated_data,
+    json_data: json_data
+  }
+}
+
+/**
+ * Track an event. This is the most important and
+ * frequently used Sugoio function.
+ *
+ * ### Usage:
+ *
+ *     // track an event named 'Registered'
+ *     sugoio.track('Registered', {'Gender': 'Male', 'Age': 21});
+ *
+ * To track link clicks or form submissions, see track_links() or track_forms().
+ *
+ * @param {String} event_name The name of the event. This can be anything the user does - 'Button Click', 'Sign Up', 'Item Purchased', etc.
+ * @param {Object} [properties] A set of properties to include with the event you're sending. These describe the user who did the event or details about the event itself.
+ * @param {Function} [callback] If provided, the callback function will be called after tracking the event.
+ */
+Sugoio.prototype.track = function (event_name, properties, callback) {
+  if (!_.isFunction(callback)) {
+    callback = _.noop
+  }
+
+  if (_.isUndefined(event_name)) {
+    Logger.error('No event name provided to sugoio.track')
+    return
+  }
+
+  if (this._event_is_disabled(event_name)) {
+    callback(0)
+    return
+  }
+
+  var encoded = this._encode(event_name, properties)
+  var json_data = encoded.json_data
+  var truncated_data = encoded.truncated_data
+
   var encoded_data = _.base64Encode([json_data])
   Logger.log('json_data:', json_data)
   Logger.log('SUGOIO REQUEST: %o', truncated_data)
@@ -612,11 +712,75 @@ Sugoio.prototype.track = function (event_name, properties, callback) {
     + 'locate=' + this.get_config('project_id')
     + '&token=' + this.get_config('token')
 
-  request().send('POST', uri, encoded_data).success(function () {
+  var async = isNotIE
+  request().send('POST', uri, encoded_data, async).success(function () {
     callback(truncated_data)
   })
 
   return truncated_data
+}
+
+
+/**
+ * Batch version of track()
+ *
+ * ### Usage:
+ *
+ *     // track an event named 'Registered'
+ *     sugoio.track('Registered', [{'Gender': 'Male', 'Age': 21}]);
+ *
+ * @param {String} event_name The name of the event. This can be anything the user does - 'Button Click', 'Sign Up', 'Item Purchased', etc.
+ * @param {Object[]} [propertiesArr] Array of properties to include with the event you're sending. These describe the user who did the event or details about the event itself.
+ * @param {Function} [callback] If provided, the callback function will be called after tracking the event.
+ */
+Sugoio.prototype.batch_track = function(event_name, propertiesArr, callback) {
+  if (!_.isFunction(callback)) {
+    callback = _.noop
+  }
+
+  if (_.isUndefined(event_name)) {
+    Logger.error('No event name provided to sugoio.track')
+    return
+  }
+
+  if (this._event_is_disabled(event_name)) {
+    callback(0)
+    return
+  }
+
+  var _this = this
+  var wrappers = _.map(propertiesArr, function(p) {
+    return _this._encode(event_name, p)
+  })
+  var jsonDataArr = _.map(wrappers, function(w, i) {
+    if (!w || !w.json_data) {
+      return ''
+    }
+    var jsonData = w.json_data
+    // [header\x02vals, vals, vals...]
+    return i === 0 ? jsonData : jsonData.substr(jsonData.indexOf('\x02') + 1)
+  })
+  var truncatedDataArr = _.map(wrappers, function(w) {
+    return w && w.truncated_data
+  })
+
+  var jsonData = jsonDataArr.join('\x02')
+
+  var encoded_data = _.base64Encode([jsonData])
+  Logger.log('json_data:', jsonData)
+  Logger.log('SUGOIO REQUEST: %o', truncatedDataArr)
+
+  var uri = this.get_config('api_host')
+    + '/post?'
+    + 'locate=' + this.get_config('project_id')
+    + '&token=' + this.get_config('token')
+
+  var async = isNotIE
+  request().send('POST', uri, encoded_data, async).success(function () {
+    callback(truncatedDataArr)
+  })
+
+  return truncatedDataArr
 }
 
 /**
@@ -629,9 +793,8 @@ Sugoio.prototype.track = function (event_name, properties, callback) {
  */
 Sugoio.prototype.track_pageview = function (page) {
   const enable_hash = this.get_config('enable_hash') || false
-  const hash = enable_hash ? location.hash : ''
   if (_.isUndefined(page)) {
-    page = location.pathname + hash
+    page = Track.track._getPathname(enable_hash)
   }
   this.track('页面加载', _.info.pageviewInfo(page))
 }
@@ -1128,6 +1291,21 @@ Sugoio.prototype.updateSessionId = function(){
   var session_id = _.shortUUID()
   var expire_days = 1 //session_id expire_days
   this.register({ 'session_id': session_id }, expire_days)
+}
+
+Sugoio.prototype.getPosition = function (callback) {
+  if (!callback) {
+    return
+  }
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      function (position) {
+        var coords = position.coords || {}
+        callback({ latitude: coords.latitude, longitude: coords.longitude })
+      })
+  } else {
+    console.log('不支持定位功能')
+  }
 }
 
 module.exports = Sugoio

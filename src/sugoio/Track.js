@@ -5,7 +5,7 @@
 
 var Config = require('../config')
 var _ = require('sugo-sdk-js-utils')['default']
-var Events = require('./events')
+var Events = require('../editor/events')
 var match_pathname = require('../match-pathname')
 var match_page = require('../match-page')
 var Regulation = require('../regulation-parser')
@@ -16,8 +16,12 @@ var Debugger = require('../debugger')
 var request = require('../request')
 var CONSTANTS = require('../../constants')
 var Logger = require('../logger').get('Track')
+var utils = require('../utils')
 
 var DISABLE_COOKIE = '__sgced'
+var __HAS_BIND_EVENT_SG = false
+var __HAS_BIND_HASHCHANGE_SG = false
+var __HAS_BIND_HEATMAP_GRID_SG = false
 
 // specifying these locally here since some websites override the global Node var
 // ex: https://www.codingame.com/
@@ -62,7 +66,7 @@ var track = {
     // set the media back when the stylesheet loads
     stylesheet.onload = function () {
       stylesheet.media = 'all'
-      callback()
+      if (callback) callback()
     }
     document.getElementsByTagName('head')[0].appendChild(stylesheet)
   },
@@ -146,11 +150,10 @@ var track = {
   _getDefaultProperties: function (eventType) {
     const ins = SugoIO.get()
     const enable_hash = ins.get_config('enable_hash') || false
-    const hash = enable_hash ? location.hash : ''
     return _.extend(_.info.properties(), {
       'event_type': eventType,
       'host': window.location.host,
-      'path_name': window.location.pathname + hash,
+      'path_name': this._getPathname(enable_hash),
       'sdk_version': SugoIO.Global.version
     })
   },
@@ -381,6 +384,35 @@ var track = {
     }
   },
 
+  _cachedGridClickEvents: [],
+
+  /** 网格热图点击格子埋点上报事件 */
+  // 满一定次数再上报
+  _trackClickPointEvent: function (e, instance, throttleBatchSize = 50) {
+    var eventType = e.type
+    /*** Don't mess with this code without running IE8 tests on it ***/
+    var target = this._getEventTarget(e)
+    if (target.nodeType === TEXT_NODE) { // defeat Safari bug (see: http://www.quirksmode.org/js/events_properties.html)
+      target = target.parentNode
+    }
+    Logger.debug('_trackClickPointEvent =>', e.clientX, e.clientY, e)
+    var props = _.extend(
+      this._getDefaultProperties(eventType),
+      {
+        event_type: 'onclick_point',
+        onclick_point: utils.getEventPointNumber(e.clientX, e.clientY)
+      }
+    )
+    const event_name = '屏幕点击'
+    this._cachedGridClickEvents.push(props)
+    if (this._cachedGridClickEvents.length < throttleBatchSize) {
+      return true
+    }
+    instance.batch_track(event_name, this._cachedGridClickEvents)
+    this._cachedGridClickEvents = []
+    return true
+  },
+
   _trackEvent: function (e, instance, events, pageInfo) {
     var eventType = e.type
     /*** Don't mess with this code without running IE8 tests on it ***/
@@ -501,7 +533,6 @@ var track = {
 
   _addDomEventHandlers: function (instance) {
     Logger.log('_addDomEventHandlers', instance)
-    var that = this
     //根据可视化配置绑定上报事件
     if (this._customProperties && this._customProperties.events.length > 0) {
       // 改为代理事件以保证动态渲染的dom事件绑定有效
@@ -511,10 +542,29 @@ var track = {
           this._trackEvent(e, instance, this._customProperties.events, this._customProperties.pageInfo)
         }
       }, this)
-      _.register_event(document, 'focus', handler, false, true)
-      // _.register_event(document, 'submit', handler, false, true)
-      _.register_event(document, 'change', handler, false, true)
-      _.register_event(document, 'click', handler, false, true)
+      if (!__HAS_BIND_EVENT_SG) { // 事件代理document上（只注册一次）
+        _.register_event(document, 'focus', handler, false, true)
+        // _.register_event(document, 'submit', handler, false, true)
+        _.register_event(document, 'change', handler, false, true)
+        _.register_event(document, 'click', handler, false, true)
+        __HAS_BIND_EVENT_SG = true
+      }
+    }
+
+    // 是否启用了网格热图上报功能
+    const heatmap_grid_track = instance.get_config('heatmap_grid_track') || false
+    if (heatmap_grid_track) {
+      const heatmap_grid_track_throttle_batch_size = instance.get_config('heatmap_grid_track_throttle_batch_size') || 50
+      const handler = e => {
+        if (_.cookie.parse(DISABLE_COOKIE) !== true) {
+          e = e || window.event
+          this._trackClickPointEvent(e, instance, heatmap_grid_track_throttle_batch_size)
+        }
+      }
+      if (!__HAS_BIND_HEATMAP_GRID_SG) { // 事件代理document上（只注册一次）
+        _.register_event(document, 'click', handler, false, true)
+        __HAS_BIND_HEATMAP_GRID_SG = true
+      }
     }
   },
   _customProperties: {},
@@ -534,159 +584,200 @@ var track = {
     this._initializedTokens.push(token)
     if (!this._maybeLoadEditor(instance)) {
       const enable_hash = instance.get_config('enable_hash') || false
-      // decide callbak
-      var parseDecideResponse = _.bind(function (response) {
-        if (!response.success) {
-          return Logger.error(response.message)
-        }
-
-        var res = null
-
-        // 捕获服务端返回异常空数据引发的bug
-        try {
-          res = _.JSONDecode(_.decompressUrlQuery(response.result))
-        } catch (e) {
-          Logger.error(e.message)
-          Logger.error(e.stack)
-        }
-
-        if (!res) return
-
-        Logger.debug('Page decide: %o', res)
-
-        if (res.config.enable_collect_everything === true) {
-          let url = this._getCurrentUrl(enable_hash)
-          var pageInfo = match_page(url, res.page_info) || {}
-          var serverDimensions = res.dimensions
-          if (!serverDimensions || serverDimensions.length < 1) {
-            return Logger.error('获取服务端预设维度错误')
-          }
-
-          // instance.serverDimensions = serverDimensions
-          SugoIO.store('serverDimensions', serverDimensions)
-
-          this._customProperties.events = res.web_event_bindings || {}
-          this._customProperties.pageInfo = pageInfo
-
-          // Write in Debugger
-          Debugger.addBuffer('PageEvents', res.web_event_bindings)
-          Debugger.addBuffer('PageConfigs', res.page_info)
-
-          var props = this._getDefaultProperties('view')
-          if (pageInfo.code) {
-            // 浏览参数设置代码注入
-            try {
-              // 代码注入失败不影响整个上报记录
-              var sugo_props = new Function('conf', 'instance', pageInfo.code)
-              var custom_props = sugo_props(pageInfo, instance) || {}
-              if (_.isObject(custom_props)) {
-                _.extend(props, custom_props)
-              }
-            } catch (e) {
-              Logger.error('sugoio track code err => %s', e.message)
-            }
-          }
-          if (pageInfo.page_name) {
-            // 写入全局 storage
-            SugoIO.store('pageInfo', pageInfo)
-          }
-          var page_name = (pageInfo.page_name || document.title)
-          var properties = _.extend({ page_name: page_name }, props)
-
-          // 次访问时间记录
-          if (!instance.persistence.props.hasOwnProperty(CONSTANTS.FIRST_VISIT_TIME)) {
-            var timestamp = _.timestamp()
-            var tmp = {}
-
-            tmp[CONSTANTS.FIRST_VISIT_TIME] = timestamp
-            properties = _.extend({}, properties, tmp)
-            instance.register_once(tmp)
-
-            Logger.info('Track first visit event: %s', timestamp)
-
-            // 上报首次访问之后再上报浏览事件
-            var p = _.extend({}, properties, { event_type: 'first_visit' })
-            instance.track(CONSTANTS.FIRST_VISIT_EVENT_NAME, p, function () {
-              instance._loaded()
-              instance.track('浏览', properties)
-            })
-          } else {
-            instance._loaded()
-            instance.track('浏览', properties)
-          }
-
-          this._addDomEventHandlers(instance)
-
-        } else {
-          instance.__autotrack_enabled = false
-        }
-      }, this)
-
-      const loadSdkDecide = () => {
-        let url = this._getCurrentUrl(enable_hash)
-        let path = location.pathname + enable_hash ? location.hash : ''
-        API.set_host(instance.get_config('app_host'))
-        // 获取页面分类
-        API.getDeployedPageCategories(token, '0').success(_.bind(function (res) {
-          var categories = res.success ? res.result : []
-          Logger.debug('Page categories: %s', categories)
-          Debugger.addBuffer('PageCategories', categories)
-
-          var regulations = _.map(categories, function (r) {
-            return r.regulation
-          })
-          var matched = Regulation.exec(url, regulations)
-          if (matched) {
-            var record = _.find(categories, function (r) {return r.regulation === matched}) || {}
-            instance.page_category = record.name
-          }
-
-          // 加载获取pathname
-          var separator = '____'
-          match_pathname(instance.get_config('decide_host'), token, url, path, true, function (err, pathname) {
-            // 加载事件
-            if (err) {
-              return Logger.error(err)
-            }
-            var uri = instance.get_config('decide_host') + '/api/sdk/desktop/decide?'
-              + 'verbose=true'
-              + '&version=0'
-              + '&lib=web'
-              + '&projectId=' + instance.get_config('project_id')
-              + '&path_name=' + encodeURIComponent(pathname.join(separator))
-              + '&token=' + token
-              + '&separator=' + separator
-
-            request().send('GET', uri).success(parseDecideResponse)
-          })
-        }, this))
-      }
-
       // vue单页应用hash变化即页面切换，重新加载配置
-      if (enable_hash) {
+      if (enable_hash && !__HAS_BIND_HASHCHANGE_SG) {
+        __HAS_BIND_HASHCHANGE_SG = true
+        // 首次载入是加载配置
+        this.loadSdkDecide(instance)
         window.addEventListener('hashchange', () => {
           setTimeout(() => {
             // load server events config
-            loadSdkDecide()
+            this.loadSdkDecide(instance)
           }, 200)
         }, false)
       } else {
         // load server events config
-        loadSdkDecide()
+        this.loadSdkDecide(instance)
       }
     }
   },
+  /** load page dicede */
+  loadSdkDecide: function(instance) {
+    const enable_hash = instance.get_config('enable_hash') || false
+    const token = instance.get_config('token')
+    let url = this._getCurrentUrl(enable_hash)
+    let that = this
+    let path = location.pathname + (enable_hash ? location.hash : '')
+    API.set_host(instance.get_config('app_host'))
+    // 获取页面分类
+    API.getDeployedPageCategories(token, '0').success((res) => {
+      var categories = res.success ? res.result : []
+      Logger.debug('Page categories: %s', categories)
+      Debugger.addBuffer('PageCategories', categories)
+      var regulations = _.map(categories, function (r) {
+        return r.regulation
+      })
+      var matched = Regulation.exec(url, regulations)
+      instance.page_category = null // 每次清空页面分类设置
+      if (matched) {
+        var record = _.find(categories, function (r) {return r.regulation === matched}) || {}
+        instance.page_category = record.name
+      }
 
+      // 加载获取pathname
+      var separator = '____'
+      match_pathname(instance.get_config('decide_host'), token, url, path, true, function (err, pathname) {
+        // 加载事件
+        if (err) {
+          return Logger.error(err)
+        }
+        var uri = instance.get_config('decide_host') + '/api/sdk/desktop/decide?'
+          + 'verbose=true'
+          + '&version=0'
+          + '&lib=web'
+          + '&projectId=' + instance.get_config('project_id')
+          + '&path_name=' + encodeURIComponent(pathname.join(separator))
+          + '&token=' + token
+          + '&separator=' + separator
+
+        request().send('GET', uri).success(that._parseDecideResponse)
+      })
+    })
+  },
+
+  /** decide callbak */
+  _parseDecideResponse: function (response) {
+    const instance = SugoIO.get()
+    const enable_hash = instance.get_config('enable_hash') || false
+    if (!response.success) {
+      return Logger.error(response.message)
+    }
+    var res = null
+    // 捕获服务端返回异常空数据引发的bug
+    try {
+      res = _.JSONDecode(_.decompressUrlQuery(response.result))
+    } catch (e) {
+      Logger.error(e.message)
+      Logger.error(e.stack)
+    }
+
+    if (!res) return
+
+    Logger.debug('Page decide: %o', res)
+
+    if (res.config.enable_collect_everything === true) {
+      let url = this._getCurrentUrl(enable_hash)
+      var pageInfo = match_page(url, res.page_info) || {}
+      var serverDimensions = res.dimensions
+      if (!serverDimensions || serverDimensions.length < 1) {
+        return Logger.error('获取服务端预设维度错误')
+      }
+
+      // instance.serverDimensions = serverDimensions
+      SugoIO.store('serverDimensions', serverDimensions)
+      SugoIO.store('positionConfig', res.position_config || 0)
+
+      this._customProperties.events = res.web_event_bindings || {}
+      this._customProperties.pageInfo = pageInfo
+
+      // Write in Debugger
+      Debugger.addBuffer('PageEvents', res.web_event_bindings)
+      Debugger.addBuffer('PageConfigs', res.page_info)
+
+      var props = this._getDefaultProperties('view')
+      if (pageInfo.code) {
+        // 浏览参数设置代码注入
+        try {
+          // 代码注入失败不影响整个上报记录
+          var sugo_props = new Function('conf', 'instance', pageInfo.code)
+          var custom_props = sugo_props(pageInfo, instance) || {}
+          if (_.isObject(custom_props)) {
+            _.extend(props, custom_props)
+          }
+        } catch (e) {
+          Logger.error('sugoio track code err => %s', e.message)
+        }
+      }
+      if (pageInfo.page_name) {
+        // 写入全局 storage
+        SugoIO.store('pageInfo', pageInfo)
+      }
+      var singlePage = window[CONSTANTS.SINGLE_PAGE_CODE]
+      var page_name = (pageInfo.page_name || (singlePage && singlePage.title ?singlePage.title : document.title))
+      var properties = _.extend({ page_name: page_name }, props)
+
+      // 次访问时间记录
+      if (!instance.persistence.props.hasOwnProperty(CONSTANTS.FIRST_VISIT_TIME)) {
+        var timestamp = _.timestamp()
+        var tmp = {}
+
+        tmp[CONSTANTS.FIRST_VISIT_TIME] = timestamp
+        properties = _.extend({}, properties, tmp)
+        instance.register_once(tmp)
+
+        Logger.info('Track first visit event: %s', timestamp)
+
+        // 上报首次访问之后再上报浏览事件
+        var p = _.extend({}, properties, { event_type: 'first_visit' })
+        instance.track(CONSTANTS.FIRST_VISIT_EVENT_NAME, p, function () {
+          instance._loaded()
+          instance.track('浏览', properties)
+        })
+      } else {
+        instance._loaded()
+        instance.track('浏览', properties)
+      }
+
+      this._addDomEventHandlers(instance)
+
+      //上报地理位置信息
+      var lastReportTime = instance.get_property('last_report_time')
+      var now = Date.now()
+      var timesConfig = SugoIO.take('positionConfig')
+      // var enableGeoTrack = instance.get_config('enable_geo_track')
+      // 只要服务端配置了上报地理位置的间隔时间，就开启上报位置信息功能
+      if (timesConfig && (!lastReportTime || now - lastReportTime >= (timesConfig * 1000 * 60))) {
+        try {
+          instance.getPosition(p => {
+            if (typeof (p.latitude) === 'undefined' || typeof (p.longitude) === 'undefined') {
+              return
+            }
+            instance.track('位置信息收集', {
+              sugo_latitude: p.latitude,
+              sugo_longitude: p.longitude,
+              event_type: '位置'
+            })
+          })
+        } catch (error) {
+          console.log('上报位置信息报错', error.message)
+        }
+        instance.register({ last_report_time: now })
+      }
+    } else {
+      instance.__autotrack_enabled = false
+    }
+  },
   _getCurrentUrl: function(enable_hash) {
     const hash = enable_hash === true ? location.hash : ''
-    return (location.origin || (location.protocol + '//' + location.host)) + location.pathname + hash
+    // 宇信专有判断
+    const singlePage = window[CONSTANTS.SINGLE_PAGE_CODE]
+    const single_page_code = singlePage && singlePage.code ? ('#' + singlePage.code) : ''
+    return (location.origin || (location.protocol + '//' + location.host)) + location.pathname + single_page_code + hash
+  },
+
+  _getPathname: function(enable_hash) {
+    const hash = enable_hash === true ? location.hash : ''
+    // 宇信专有判断
+    const singlePage = window[CONSTANTS.SINGLE_PAGE_CODE]
+    const single_page_code = singlePage && singlePage.code ? ('#' + singlePage.code) : ''
+    return window.location.pathname + single_page_code + hash
   },
 
   _editorParamsFromHash: function (instance, state) {
     var editorParams
     try {
       if (_.isString(state)) {
-        state = JSON.parse(state)
+        state = _.JSONDecode(state)
       }
       var expiresInSeconds = state.expires_in
       editorParams = {
@@ -697,7 +788,7 @@ var track = {
         'userId': state.user_id,
         'choosePage': state.choose_page
       }
-      window.sessionStorage.setItem('editorParams', JSON.stringify(editorParams))
+      window.sessionStorage.setItem('editorParams', _.JSONEncode(editorParams))
 
       if (state.desiredHash) {
         window.location.hash = state.desiredHash
@@ -725,11 +816,10 @@ var track = {
     var fromHash = false
     var fromStorage = storage.getItem('_sugocehash')
     var params
-
     try {
       hash = window.atob(win.location.hash.replace('#', ''))
       if (hash && _.includes(hash, 'state')) {
-        fromHash = JSON.parse(hash).state
+        fromHash = _.JSONDecode(hash).state
       }
     } catch (e) {
       // console.log(e)
@@ -744,39 +834,82 @@ var track = {
       storage.removeItem('_sugocehash')
     } else {
       // get credentials from sessionStorage from a previous initialzation
-      params = JSON.parse(storage.getItem('editorParams') || '{}')
+      params = _.JSONDecode(storage.getItem('editorParams') || '{}')
     }
 
     if (!params.app_host) {
       params.app_host = instance.get_config('app_host')
     }
 
+    // 可视化埋点模式
     if (params.projectToken && instance.get_config('token') === params.projectToken) {
       this._loadEditor(instance, params)
       return true
     }
 
+    // 热图模式
+    const heatmap = instance.get_config('heatmap')
+    if (heatmap && params.heatmapType && instance.get_config('project_id') === params.projectId) {
+      this._loadEditor(instance, params)
+      return true
+    }
+    // 项目ID不对应
+    if (heatmap && params.heatmapType && instance.get_config('project_id') !== params.projectId) {
+      utils.sendMessage2Parent({
+        type: 'projectError',
+        payload: {
+          currentProjectId: params.projectId,
+          configProjectId: instance.get_config('project_id')
+        }
+      })
+      return false
+    }
     return false
   },
 
   // only load the codeless event editor once, even if there are multiple instances of SugoioLib
   _editorLoaded: false,
   _loadEditor: function (instance, editorParams) {
+    var that = this
     // TODO css与js一起打包，避免其中某一个加载失败造成的造成的异常
     if (!this._editorLoaded) {
       this._editorLoaded = true
       var editorUrl
       var cacheBuster = '?_ts=' + (new Date()).getTime()
       var siteMedia = instance.get_config('app_host') + '/_bc/sugo-sdk-js/libs'
+      var editor = instance.get_config('editor')
       var filename = typeof window.Vue === 'function' ? 'sugo-editor-lite.min.js' : 'sugo-editor.min.js'
+      if (typeof window.Vue !== 'function') {
+        filename = editor === 'editor-lite' ? 'sugo-editor-lite.min.js' : 'sugo-editor.min.js'
+      }
+      // 开发模式
+      if (process.env.NODE_ENV !== 'production') {
+        siteMedia = '//localhost:4000/build'
+        filename = typeof window.Vue === 'function' ? 'editor-lite.js' : 'editor.js'
+        if (typeof window.Vue !== 'function') {
+          // 有些情况vuejs未加载完已经加载了sdk，所以window.vue判断不出类型
+          filename = editor === 'editor-lite' ? 'editor-lite.js' : 'editor.js'
+        }
+      }
+
+      if (instance.version >= '2.0.0') {
+        var iviewCss = siteMedia + '/editor.css'
+        that._loadCss(iviewCss)
+      }
+
       if (Config.debug) {
         editorUrl = siteMedia + '/' + filename + cacheBuster
       } else {
         editorUrl = siteMedia + '/' + filename + cacheBuster
       }
-      var that = this
+
+      var heatmap = instance.get_config('heatmap')
       that._loadScript(editorUrl, function () {
         setTimeout(function () {
+          if (heatmap && editorParams.heatmapType) { // 热图模式
+            SugoIO.Global.Editor.heatmap(instance, editorParams)
+            return
+          }
           SugoIO.Global.Editor.run(instance, editorParams)
         }, 400)
       })

@@ -76,18 +76,22 @@ function matcher (list, url, path) {
 module.exports = function (host, token, url, path, deployed, callback) {
 
   // 配置 host
-  API.host = host
+  API.set_host(host)
 
   // 查询 token 下的所有PageConfDesc
-  API.getAllPageInfo(token, '0', deployed).success(function (res) {
+  API.getAllPageInfo(token, '0', deployed)
+    .success(function (res) {
+      if (!res.success) {
+        Logger.error('get all page info error: %s', res.message)
+        callback(res.message)
+      }
 
-    if (!res.success) {
-      Logger.error('get all page info error: %s', res.message)
-      callback(res.message)
-    }
-
-    callback(null, matcher(res.result || [], url, path), res.result)
-  })
+      callback(null, matcher(res.result || [], url, path), res.result)
+    })
+    // why ie8 error ?
+    // .error(function(err) {
+    //   Logger.error(err, 'load page error')
+    // })
 }
 
 module.exports.matcher = matcher

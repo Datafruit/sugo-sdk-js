@@ -1,5 +1,5 @@
 /*!
- * sugo-sdk-javascript JavaScript Lib v1.3.13
+ * sugo-sdk-javascript JavaScript Lib
  * http://sugo.io
  * Date: 2017-11-28
  */
@@ -21,6 +21,7 @@ var SUGOIO_LIB_URL = '//localhost:8000/_bc/sugo-sdk-js/libs/sugoio-latest.min.js
   try {
     store(win.location.hash.replace('#', ''))
   } catch (e) {
+    // console.log(e)
   } finally {
     capture(sugoio)
   }
@@ -194,7 +195,7 @@ var SUGOIO_LIB_URL = '//localhost:8000/_bc/sugo-sdk-js/libs/sugoio-latest.min.js
 
     // 删除无用的shallow
     // create shallow clone of the public sugoio interface
-    functions = "time_event track track_pageview register register_once unregister set_config".split(' ')
+    functions = 'time_event track track_pageview register register_once unregister set_config'.split(' ')
 
     forEach(functions, function (fn) {
       _set_and_defer(target, fn)
@@ -207,8 +208,8 @@ var SUGOIO_LIB_URL = '//localhost:8000/_bc/sugo-sdk-js/libs/sugoio-latest.min.js
   // Snippet version, used to fail on new features w/ old snippet
   sugoio.__SV = 1.2
 
-  script = document.createElement("script")
-  script.type = "text/javascript"
+  script = document.createElement('script')
+  script.type = 'text/javascript'
   script.async = true
 
   if (typeof SUGOIO_CUSTOM_LIB_URL !== 'undefined') {
@@ -219,7 +220,7 @@ var SUGOIO_LIB_URL = '//localhost:8000/_bc/sugo-sdk-js/libs/sugoio-latest.min.js
     script.src = SUGOIO_LIB_URL
   }
 
-  first_script = document.getElementsByTagName("script")[0]
+  first_script = document.getElementsByTagName('script')[0]
   first_script.parentNode.insertBefore(script, first_script)
 
 })(document, window.sugoio || [])

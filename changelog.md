@@ -1,7 +1,107 @@
+# v2.1.3
+
+- 实现热图点击批量上报
+- 修正点击位置偏移问题
+
+# v2.1.2
+
+- 修正某个点点击量很大时，热图其他点变得很浅
+- 修正 html 内容太矮时，下边的点击事件没有显示的 bug
+
+# v2.1.0
+
+- 新增热图功能，sugoio.init增加配置:
+  - `heatmap: false` 是否支持分析热图功能
+  - `heatmap_grid_track: false`  客户端是否支持网格热图事件自动上报功能
+# v2.0.7
+
+- 停留改为异步请求
+- 地理位置上报不依赖于enable_geo_track配置，根据服务端配置的间隔时间为准，`大于0`则启用地理位置上报
+- 修复init参数未覆盖默认config配置问题
+
+# v2.0.6
+
+- 修正IE8下Object.defineProperty错误问题
+
+# v2.0.5
+
+- 修复IE10以下beforeunload不上报停留问题
+- 修复`app_host`,`api_host`等http协议问题
+- sugoio.init增加`duration_track: true` 是否上报停留事件，默认true=上报
+
+# v2.0.4
+
+- 支持`sugo-analytics`前端的全局配置修改sdk初始化参数值: websdk_`['api_host', 'app_host', 'decide_host', 'enable_geo_track', 'enable_hash']`
+
+# v2.0.3
+
+- 将浏览器原生JSON引用方法改为_.JSONEncode/_.JSONDecode
+
+# v2.0.2
+
+- 增加地理位置上报事件
+```js
+sugoio.init增加`enable_geo_track: false`配置, // 是否上报位置信息事件；默认false
+
+// enable_geo_track: true
+instance.track('位置信息收集', {
+  sugo_latitude: p.latitude,
+  sugo_longitude: p.longitude,
+  event_type: '位置'
+})
+```
+- 修复webpack ie8配置打包无效问题
+
+# v2.0.1
+
+- 修复hash加密参数错误bug
+
+# v2.0.0
+
+- 采用iview重构可视化编辑器
+
+- 实现`sugoio.load/sugoio.unlad`函数（供单页应用页面切换动态切换code）
+
+  ```javascript
+  // 针对vue单页应用非启用hash路由情况使用
+  // 页面载入调用此函数，加载埋点配置，绑定事件，并上报页面浏览记录、停留事件开始记时
+  sugoio.load(code, options); // options: {code, title}
+  // 页面卸载调用此函数，上报停留事件
+  sugoio.unload(code, options); // options: {code, title}
+  ```
+- `sugoio.init`增加`editor`: `'editor'或者'editor-lite'`配置；主要区分为可视化editorjs是否打包vuejs
+  - 可根据具体环境修改配置（有的客户站点使已经加载了全局的vuejs，这种情况需使用`editor-lite`)
+  ```javascript
+    sugoio.init('e8f2ee7a4026db5907f9a5bd998dce26', {
+        debug: true,
+        // 默认为editor=打包包含了vuejs; editor-lite=打包没有包含vuejs
+        editor: 'editor-lite',
+	  })
+  ```
+
+# v1.5.4
+
+- 修复拉取服务端配置pathname获取错误问题
+
+# v1.5.3
+
+- 页面设置支持通配符*匹配
+
+# v1.5.2
+
+- 修复页面设置保存bug
+
+# v1.5.1
+
+- 完善enable_hash模式下埋点问题
+  - 事件重复绑定
+  - 页面分类上报不准确
+- 退出埋点删掉高亮元素
+
 # v1.5.0
 
 - 每次打开页面设置根据当前url重新匹配页面
-- 增加 editor-lite.js打包（不含vuejs），根据环境动态加载editor
+- 增加 editor-lite.js打包（不含vuejs），根据环境动态加载editor-lite.js
 - 将原来同类对象的深度监听改为浅监听，点击同类勾选重新计算同类path(解决某些环境同类堆栈溢出bug)
 - 支持根据enable_hash监听hashchange事件，可视化埋点重新渲染埋点事件
 - 支持根据enable_hash监听hashchange事件，sdk上报动态加载新配置并绑定事件
@@ -195,4 +295,13 @@ __ie8\9兼容模式下上报数据的支持视需求强烈而定__
 
 # v0.2.5 (2017-05-25)
 + 添加`system_name`字段
+
+
+
+
+
+
+
+
+
 

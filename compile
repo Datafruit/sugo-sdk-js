@@ -1,7 +1,7 @@
 #!/bin/bash -eu
 echo 'rm build/*'
 rm -rf ./build/
-mkdir -p ./build
+mkdir -p ./build/assets
 
 if [ $@ = 'build' ]; then
   echo 'rm libs/*'
@@ -18,6 +18,13 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+echo "Copy assets and css"
+cp -rf ./build/assets ./libs
+cp ./build/editor.css ./libs
+
 echo "Copy to libs"
+cp ./build/editor.js ./libs/sugo-editor.min.js
+cp ./build/editor-lite.js ./libs/sugo-editor-lite.min.js
 cp ./build/sugo-sdk.js ./libs/sugoio-latest.min.buf.js
 cp ./build/sugo-sdk.js ./libs/sugoio-latest.min.js
+cp ./build/wx-mini.js ./libs/sugo-wx-mini.program.min.js

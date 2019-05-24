@@ -8,9 +8,7 @@
     [
       "transform-es3-property-literals",
       "transform-es3-member-expression-literals",
-      [
-        "transform-es2015-modules-commonjs",
-        {
+      ["transform-es2015-modules-commonjs", {
           "loose": true
         }
       ],
@@ -21,6 +19,13 @@
           "styleLibraryName": "~./src/editor/theme/element-ui"
         }
       ]
+    ],
+    [
+      "import",
+      {
+        "libraryName": "iview",
+        "libraryDirectory": "src/components/"
+      }
     ]
   ]
 }

@@ -8,6 +8,7 @@
  */
 
 var _ = require('./utils')._
+var Regulation = require('./regulation-parser')
 var Logger = require('./logger').get()
 
 /**
@@ -16,12 +17,38 @@ var Logger = require('./logger').get()
  * @return {?PageConfDesc}
  */
 module.exports = function (url, list) {
-  const conf = _.find(list, r => {
-    return r.page === url
+  // 页面设置改为可动态匹配（支持*通配符)
+  const regulations = _.map(list, function (r) {
+    // 兼容旧版数据：
+    // 旧的数据中没有category字段，默认使用'*' + page为其category
+    if (!r.category) {
+      r.category = '*' + r.page
+    }
+    return r.category
   })
+  let pageInfo
+  const matched = Regulation.exec(url, regulations)
+  if (matched) {
+    // 优先匹配当前页面设置
+    pageInfo = _.find(list, (r) => r.category === matched && r.page === url)
+    // 未设置特殊名称，优先匹配第一条符合规则记录
+    if (!pageInfo) {
+      pageInfo = _.find(list, r => r.category === matched)
+    }
+  }
+  Logger.info('Matched page config %o', pageInfo)
+  return pageInfo
 
-  Logger.info('Matched page config %o', conf)
-  return conf
+  /************ older */
+
+  // const conf = _.find(list, r => {
+  //   return r.page === url
+  // })
+
+  // Logger.info('Matched page config %o', conf)
+  // return conf
+
+  /**************deprecated*******/
   // if (conf) {
   //   Logger.info('Matched page config %o', conf)
   //   return conf
@@ -35,4 +62,3 @@ module.exports = function (url, list) {
   // Logger.info('Matched page config %o', result)
   // return result
 }
-

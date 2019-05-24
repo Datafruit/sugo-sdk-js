@@ -3,11 +3,11 @@ The Sugo JavaScript Library is a set of methods attached to a global `sugoio` ob
 intended to be used by websites wishing to send data to Sugo projects. A full reference
 is available 
 
+## Alternative installation via NPM
+This library is available as a [package on NPM](https://dev.sugo.io:4873/package/sugo-sdk-javascript) (named `sugo-sdk-javascript` to distinguish it from Sugo's server-side Node.js library, available on NPM as `sugoio`). To install into a project using NPM with a front-end packager such as [Browserify](http://browserify.org/) or [Webpack](https://webpack.github.io/):
 
 ```sh
-npm install
-
-npm run build
+npm install --save sugo-sdk-js
 ```
 
 You can then require the lib like a standard Node.js module:

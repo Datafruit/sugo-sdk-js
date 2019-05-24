@@ -1,9 +1,10 @@
 {
   "name": "sugo-sdk-js",
-  "version": "1.5.0",
+  "version": "2.1.5",
   "description": "web可视化埋点",
   "main": "install.js",
   "scripts": {
+    "prepare": "npm run deploy",
     "start": "pushd examples",
     "server": "echo 'Browse to localhost:4000/tests' && node testServer.js",
     "lint": "./node_modules/eslint/bin/eslint.js ./src",
@@ -12,16 +13,17 @@
     "deploy": "./compile build",
     "theme": "./node_modules/.bin/et -c ./src/editor/theme/element-variables.css -o ./src/editor/theme/element-ui",
     "build:dev": "NODE_ENV=development ./node_modules/.bin/webpack --watch --progress",
-    "build": "NODE_ENV=production ./node_modules/.bin/webpack -p --progress",
+    "build": "NODE_ENV=production ./node_modules/.bin/webpack --progress",
     "snippet": "./node_modules/.bin/uglifyjs ./sugoio-jslib-snippet.js -m -c --ie8 --comments '/^/*!/' --timings -o ./sugoio-jslib-snippet.min.js",
     "validate": "npm ls"
   },
   "dependencies": {
     "css-selector-parser": "0.0.5",
-    "element-ui": "2.4.6",
+    "heatmap.js": "^2.0.5",
+    "iview": "^3.1.5-sugo",
     "sugo-css-path": "^1.0.0",
-    "sugo-sdk-js-utils": "0.0.15",
-    "ua-parser-js": "^0.7.18",
+    "sugo-sdk-js-utils": "0.0.17",
+    "ua-parser-js": "^0.7.19",
     "vue": "2.5.17"
   },
   "devDependencies": {
@@ -29,6 +31,7 @@
     "babel-eslint": "^7.2.3",
     "babel-loader": "^7.1.5",
     "babel-plugin-component": "^1.1.1",
+    "babel-plugin-import": "^1.9.1",
     "babel-plugin-transform-es2015-modules-commonjs": "^6.26.2",
     "babel-plugin-transform-es3-member-expression-literals": "^6.22.0",
     "babel-plugin-transform-es3-property-literals": "^6.22.0",
@@ -40,9 +43,14 @@
     "css-loader": "^1.0.0",
     "element-theme": "^2.0.1",
     "element-theme-default": "^1.4.13",
+    "es3ify-loader": "^0.2.0",
     "eslint": "^5.4.0",
     "express": "^4.16.3",
-    "file-loader": "^0.8.5",
+    "extract-text-webpack-plugin": "^2.1.2",
+    "file-loader": "2.0.0",
+    "iview-loader": "^1.2.2",
+    "less": "^3.8.1",
+    "less-loader": "^4.1.0",
     "lodash": "^4.17.11",
     "lz-string": "^1.4.4",
     "morgan": "^1.9.0",
@@ -53,16 +61,11 @@
     "sugo-analytics-common-tools": "^1.1.1",
     "uglify-js": "^3.4.8",
     "uglifyjs-webpack-plugin": "1.3.0",
-    "url-loader": "^1.1.1",
+    "url-loader": "^1.1.2",
     "vue-loader": "^12.1.0",
     "vue-template-compiler": "2.5.17",
     "webpack": "^2.7.0"
   },
   "author": "WuQic",
-  "license": "ISC",
-  "pre-commit": [
-    "lint",
-    "validate",
-    "test"
-  ]
+  "license": "ISC"
 }
